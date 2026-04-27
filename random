@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SE Pennsylvania Stream Gauges</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #151b23;
+    --surface2: #1c2330;
+    --border: #2a3441;
+    --accent: #3fb68b;
+    --accent2: #5bc8a8;
+    --warn: #e5a33a;
+    --danger: #e05c5c;
+    --text: #e0e8f0;
+    --text2: #7a9ab0;
+    --text3: #445566;
+    --mono: 'IBM Plex Mono', monospace;
+    --serif: 'Playfair Display', serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* animated water background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: 
+      radial-gradient(ellipse 80% 40% at 20% 80%, rgba(63,182,139,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 60% at 80% 20%, rgba(91,200,168,0.04) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  header {
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .header-left h1 {
+    font-family: var(--serif);
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    color: var(--text);
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+  }
+
+  .header-left p {
+    font-size: 0.72rem;
+    color: var(--text2);
+    margin-top: 0.4rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+
+  #last-refresh {
+    font-size: 0.7rem;
+    color: var(--text3);
+    letter-spacing: 0.04em;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.5rem 1.1rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn:hover { background: var(--accent); color: var(--bg); }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn:disabled:hover { background: transparent; color: var(--accent); }
+
+  /* gauge grid */
+  .gauge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1.25rem;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #3a4f60; }
+
+  .card-accent-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.7;
+    transition: opacity 0.3s;
+  }
+  .card.loading .card-accent-bar { background: var(--border); animation: shimmer 1.4s infinite; }
+  .card.has-error .card-accent-bar { background: var(--danger); }
+
+  @keyframes shimmer {
+    0%,100% { opacity: 0.3; }
+    50% { opacity: 0.7; }
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .card-name {
+    font-family: var(--serif);
+    font-size: 1.05rem;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .card-meta {
+    font-size: 0.66rem;
+    color: var(--text3);
+    margin-top: 0.3rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: livepulse 2s infinite;
+  }
+  @keyframes livepulse {
+    0%,100% { opacity: 1; box-shadow: 0 0 6px var(--accent); }
+    50% { opacity: 0.4; box-shadow: 0 0 2px var(--accent); }
+  }
+  .loading-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+    animation: shimmer 1.2s infinite;
+  }
+  .error-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+  }
+
+  .remove-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0 2px;
+    transition: color 0.15s;
+    font-family: var(--mono);
+  }
+  .remove-btn:hover { color: var(--danger); }
+
+  /* metrics */
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .metric {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 0.7rem 0.6rem 0.6rem;
+  }
+
+  .m-label {
+    font-size: 0.6rem;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.35rem;
+  }
+
+  .m-value {
+    font-size: 1.3rem;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .m-unit {
+    font-size: 0.6rem;
+    color: var(--text2);
+    font-weight: 400;
+    display: block;
+    margin-top: 0.2rem;
+  }
+
+  .m-na {
+    font-size: 1rem;
+    color: var(--text3);
+  }
+
+  .m-loading {
+    font-size: 0.75rem;
+    color: var(--text3);
+    animation: shimmer 1.2s infinite;
+  }
+
+  .card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.85rem;
+  }
+
+  .timestamp {
+    font-size: 0.63rem;
+    color: var(--text3);
+    letter-spacing: 0.03em;
+  }
+
+  .usgs-link {
+    font-size: 0.63rem;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+  }
+  .usgs-link:hover { opacity: 1; text-decoration: underline; }
+
+  .error-msg {
+    font-size: 0.72rem;
+    color: var(--danger);
+    grid-column: 1/-1;
+    padding: 0.5rem 0;
+  }
+
+  /* add site */
+  .add-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    margin-top: 0.5rem;
+  }
+
+  .add-title {
+    font-size: 0.65rem;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.75rem;
+  }
+
+  .add-row {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .add-row input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.45rem 0.7rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .add-row input:focus { border-color: var(--accent); }
+  .add-row input::placeholder { color: var(--text3); }
+  #add-id { width: 160px; }
+  #add-name { width: 200px; }
+
+  .status-bar {
+    font-size: 0.7rem;
+    color: var(--accent2);
+    margin-top: 0.75rem;
+    min-height: 1rem;
+    letter-spacing: 0.03em;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="header-top">
+      <div class="header-left">
+        <h1>SE Pennsylvania<br/>Stream Gauges</h1>
+        <p>Live USGS instantaneous values · Auto-refresh every 15 min</p>
+      </div>
+      <div class="header-right">
+        <span id="last-refresh"></span>
+        <button class="btn" id="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="gauge-grid" id="gauge-grid"></div>
+
+  <div class="add-section">
+    <p class="add-title">Add a gauge station</p>
+    <div class="add-row">
+      <input id="add-id" type="text" placeholder="USGS site # (e.g. 01467200)" maxlength="12" />
+      <input id="add-name" type="text" placeholder="Name (e.g. Schuylkill at Norristown)" />
+      <button class="btn" onclick="addSite()">+ Add</button>
+    </div>
+    <p class="status-bar" id="status-bar"></p>
+  </div>
+</div>
+
+<script>
+const SITES = [
+  { id: '01447000', name: 'Delaware River',      loc: 'Easton, PA' },
+  { id: '01459500', name: 'Tohickon Creek',       loc: 'Pipersville, PA' },
+  { id: '01555000', name: 'Penns Creek',          loc: 'Penns Creek, PA' },
+  { id: '01558000', name: 'Little Juniata River', loc: 'Spruce Creek, PA' },
+  { id: '01426500', name: 'W. Branch Delaware',   loc: 'Hale Eddy, NY' },
+];
+
+let cardData = {};
+
+function fmtTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+         + ' · ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  } catch(e) { return ''; }
+}
+
+function renderCards() {
+  const grid = document.getElementById('gauge-grid');
+  grid.innerHTML = '';
+  SITES.forEach(site => {
+    const d = cardData[site.id];
+    const isLoading = !d;
+    const hasError  = d && d.error;
+    const isLive    = d && !d.error;
+
+    let dotHtml   = isLoading ? '<div class="loading-dot"></div>'
+                  : hasError  ? '<div class="error-dot"></div>'
+                  : '<div class="live-dot"></div>';
+
+    let metricsHtml = '';
+    let footerTs = '';
+
+    if (isLoading) {
+      metricsHtml = ['Gauge ht','Discharge','Temp'].map(l => `
+        <div class="metric">
+          <div class="m-label">${l}</div>
+          <div class="m-value m-loading">—</div>
+        </div>`).join('');
+    } else if (hasError) {
+      metricsHtml = `<div class="error-msg">⚠ ${d.error}</div>`;
+    } else {
+      const gh = d.gauge_ht   != null ? d.gauge_ht.toFixed(2) : null;
+      const q  = d.discharge  != null ? Math.round(d.discharge).toLocaleString() : null;
+      const tC = d.temp       != null ? d.temp : null;
+      const tF = tC           != null ? ((tC * 9/5) + 32).toFixed(1) : null;
+      footerTs = d.timestamp  ? 'Updated ' + fmtTime(d.timestamp) : '';
+
+      metricsHtml = `
+        <div class="metric">
+          <div class="m-label">Gauge height</div>
+          <div class="m-value">${gh != null ? gh : '<span class="m-na">—</span>'}
+            ${gh != null ? '<span class="m-unit">feet</span>' : ''}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Discharge</div>
+          <div class="m-value">${q != null ? q : '<span class="m-na">—</span>'}
+            ${q != null ? '<span class="m-unit">cfs</span>' : ''}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Temperature</div>
+          <div class="m-value">${tF != null ? tF : '<span class="m-na">—</span>'}
+            ${tF != null ? '<span class="m-unit">°F</span>' : ''}</div>
+        </div>`;
+    }
+
+    const cardClass = isLoading ? 'card loading' : hasError ? 'card has-error' : 'card';
+
+    const el = document.createElement('div');
+    el.className = cardClass;
+    el.id = 'card-' + site.id;
+    el.innerHTML = `
+      <div class="card-accent-bar"></div>
+      <div class="card-header">
+        <div>
+          <div class="card-name">${site.name}</div>
+          <div class="card-meta">Site ${site.id}${site.loc ? ' · ' + site.loc : ''}</div>
+        </div>
+        <div class="card-actions">
+          ${dotHtml}
+          <button class="remove-btn" onclick="removeSite('${site.id}')" title="Remove">✕</button>
+        </div>
+      </div>
+      <div class="metrics">${metricsHtml}</div>
+      <div class="card-footer">
+        <span class="timestamp">${footerTs}</span>
+        <a class="usgs-link" href="https://waterdata.usgs.gov/monitoring-location/USGS-${site.id}/" target="_blank">USGS ↗</a>
+      </div>`;
+    grid.appendChild(el);
+  });
+}
+
+async function fetchSite(site) {
+  const url = `https://waterservices.usgs.gov/nwis/iv/?sites=${site.id}&parameterCd=00065,00060,00010&period=PT2H&format=json`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    const series = json?.value?.timeSeries || [];
+
+    const PARAM_MAP = { '00065': 'gauge_ht', '00060': 'discharge', '00010': 'temp' };
+    let result = { gauge_ht: null, discharge: null, temp: null, timestamp: null };
+
+    series.forEach(ts => {
+      const code = ts.variable?.variableCode?.[0]?.value;
+      const key  = PARAM_MAP[code];
+      if (!key) return;
+      const vals = ts.values?.[0]?.value || [];
+      const last = [...vals].reverse().find(v => v.value !== '-999999' && v.value !== '');
+      if (last) {
+        result[key] = parseFloat(last.value);
+        if (!result.timestamp || last.dateTime > result.timestamp) {
+          result.timestamp = last.dateTime;
+        }
+      }
+    });
+
+    if (!series.length) throw new Error('No data returned for this site.');
+    cardData[site.id] = result;
+  } catch(e) {
+    cardData[site.id] = { error: e.message || 'Could not load USGS data.' };
+  }
+  renderCards();
+}
+
+async function fetchAll() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Loading…';
+  document.getElementById('status-bar').textContent = 'Fetching live readings from USGS…';
+  renderCards();
+  await Promise.all(SITES.map(s => fetchSite(s)));
+  const now = new Date();
+  document.getElementById('last-refresh').textContent =
+    'Last updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  btn.disabled = false;
+  btn.textContent = '↻ Refresh';
+  document.getElementById('status-bar').textContent = '';
+}
+
+function removeSite(id) {
+  const i = SITES.findIndex(s => s.id === id);
+  if (i > -1) { SITES.splice(i, 1); delete cardData[id]; renderCards(); }
+}
+
+async function addSite() {
+  const idEl   = document.getElementById('add-id');
+  const nameEl = document.getElementById('add-name');
+  const id     = idEl.value.trim().replace(/\D/g, '');
+  const name   = nameEl.value.trim() || 'Site ' + id;
+  if (!id || id.length < 6) { alert('Enter a valid USGS site number (at least 6 digits).'); return; }
+  if (SITES.find(s => s.id === id)) { alert('That site is already in your list.'); return; }
+  SITES.push({ id, name, loc: '' });
+  idEl.value = ''; nameEl.value = '';
+  renderCards();
+  document.getElementById('status-bar').textContent = `Fetching data for site ${id}…`;
+  await fetchSite({ id, name, loc: '' });
+  document.getElementById('status-bar').textContent = '';
+}
+
+// auto-refresh every 15 minutes
+setInterval(fetchAll, 15 * 60 * 1000);
+
+fetchAll();
+</script>
+</body>
+</html>
